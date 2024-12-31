@@ -1,43 +1,63 @@
 import sys
-import threading
-from PyQt5 import QtGui, QtWidgets
+import json
+from PyQt5 import QtWidgets, QtGui
 from pynput import keyboard
+import threading
 
 
 class ShortcutReplacer:
     def __init__(self):
         self.replacements = {}
-        self.currentText = ""
-        self.listeners = None
+        self.current_text = ""
+        self.listener = None
+        self.load_rules()
 
-    def add_replacement(self, trigger, value):
-        self.replacements[trigger] = value
+    def add_replacement(self, trigger, replacement):
+        self.replacements[trigger] = replacement
+        self.save_rules()
 
     def remove_replacement(self, trigger):
         if trigger in self.replacements:
             del self.replacements[trigger]
+            self.save_rules()
+
+    def save_rules(self):
+        try:
+            with open("rules.json", "w") as file:
+                json.dump(self.replacements, file)
+        except Exception as e:
+            print(f"Error saving rules: {e}")
+
+    def load_rules(self):
+        try:
+            with open("rules.json", "r") as file:
+                self.replacements = json.load(file)
+        except FileNotFoundError:
+            self.replacements = {}
+        except Exception as e:
+            print(f"Error loading rules: {e}")
 
     def start(self):
         def on_press(key):
             try:
                 if hasattr(key, 'char') and key.char:
-                    self.currentText += key.char
-                    for trigger, value in self.replacements.items():
-                        if self.currentText.endswith(trigger):
+                    self.current_text += key.char
+                    for trigger, replacement in self.replacements.items():
+                        if self.current_text.endswith(trigger):
                             for _ in range(len(trigger)):
-                                keyboard.Controller().press(keyboard.Key.backspace),
-                                keyboard.Controller().release(keyboard.Key.backspace),
-                            keyboard.Controller().type(value)
-                            self.currentText = ""
+                                keyboard.Controller().press(keyboard.Key.backspace)
+                                keyboard.Controller().release(keyboard.Key.backspace)
+                            keyboard.Controller().type(replacement)
+                            self.current_text = ""
             except Exception as e:
                 print(f"Error: {e}")
 
-        self.listeners = keyboard.Listener(on_press=on_press)
-        self.listeners.start()
+        self.listener = keyboard.Listener(on_press=on_press)
+        self.listener.start()
 
     def stop(self):
-        if self.listeners:
-            self.listeners.stop()
+        if self.listener:
+            self.listener.stop()
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -46,7 +66,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.replacer = ShortcutReplacer()
 
-        self.setWindowTitle("Advanced Keyboard")
+        self.setWindowTitle("Shortcut Replacer")
         self.setGeometry(100, 100, 400, 300)
 
         self.layout = QtWidgets.QVBoxLayout()
@@ -60,6 +80,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.add_button.clicked.connect(self.add_rule)
 
         self.rules_list = QtWidgets.QListWidget(self)
+        self.load_rules_into_list()
 
         self.start_button = QtWidgets.QPushButton("Start", self)
         self.start_button.clicked.connect(self.start_replacer)
@@ -85,6 +106,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.rules_list.addItem(f"{trigger} -> {replacement}")
             self.trigger_input.clear()
             self.replacement_input.clear()
+
+    def load_rules_into_list(self):
+        self.rules_list.clear()
+        for trigger, replacement in self.replacer.replacements.items():
+            self.rules_list.addItem(f"{trigger} -> {replacement}")
 
     def start_replacer(self):
         threading.Thread(target=self.replacer.start, daemon=True).start()
