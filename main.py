@@ -2,9 +2,17 @@ import sys
 import json
 import os
 from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5.QtCore import Qt
 from pynput import keyboard
 import threading
 import ctypes
+import logging
+
+logging.basicConfig(
+    filename="shortcut_replacer.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 class ShortcutReplacer:
@@ -13,6 +21,7 @@ class ShortcutReplacer:
         self.current_text = ""
         self.listener = None
         self.load_rules()
+        self.validate_rules()
 
     def add_replacement(self, trigger, replacement):
         self.replacements[trigger] = replacement
@@ -27,17 +36,25 @@ class ShortcutReplacer:
         try:
             with open("rules.json", "w") as file:
                 json.dump(self.replacements, file)
+                logging.info("Rules saved successfully.")
         except Exception as e:
-            print(f"Error saving rules: {e}")
+            logging.error(f"Error saving rules: {e}")
 
     def load_rules(self):
         try:
             with open("rules.json", "r") as file:
                 self.replacements = json.load(file)
+                logging.info("Rules loaded successfully.")
         except FileNotFoundError:
             self.replacements = {}
+            logging.warning("Rules file not found. Starting with an empty set of rules.")
         except Exception as e:
-            print(f"Error loading rules: {e}")
+            logging.error(f"Error loading rules: {e}")
+
+    def validate_rules(self):
+        if not isinstance(self.replacements, dict):
+            logging.error("Invalid rules format detected. Resetting to default.")
+            self.replacements = {}
 
     def start(self):
         def on_press(key):
@@ -52,7 +69,15 @@ class ShortcutReplacer:
                             keyboard.Controller().type(replacement)
                             self.current_text = ""
             except Exception as e:
-                print(f"Error: {e}")
+                logging.error(f"Error during key press handling: {e}")
+
+        try:
+            self.listener = keyboard.Listener(on_press=on_press)
+            self.listener.start()
+            logging.info("Listener started successfully.")
+        except Exception as e:
+            self.listener = None
+            logging.error(f"Error starting listener: {e}")
 
         self.listener = keyboard.Listener(on_press=on_press)
         self.listener.start()
@@ -60,6 +85,7 @@ class ShortcutReplacer:
     def stop(self):
         if self.listener:
             self.listener.stop()
+            logging.info("Listener stopped successfully.")
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -114,6 +140,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.rules_list.addItem(f"{trigger} -> {replacement}")
             self.trigger_input.clear()
             self.replacement_input.clear()
+            logging.info(f"Added rule: {trigger} -> {replacement}")
 
     def load_rules_into_list(self):
         self.rules_list.clear()
@@ -122,22 +149,34 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def start_replacer(self):
         threading.Thread(target=self.replacer.start, daemon=True).start()
+        logging.info("Shortcut replacer started.")
 
     def stop_replacer(self):
         self.replacer.stop()
+        logging.info("Shortcut replacer stopped.")
 
     def check_autostart(self):
-        startup_path = os.path.join(os.getenv('APPDATA'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'ShortcutReplacer.lnk')
+        startup_path = os.path.join(os.getenv('APPDATA'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup',
+                                    'ShortcutReplacer.lnk')
         return os.path.exists(startup_path)
 
     def toggle_autostart(self, state):
-        startup_path = os.path.join(os.getenv('APPDATA'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'ShortcutReplacer.lnk')
+        startup_path = os.path.join(os.getenv('APPDATA'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup',
+                                    'ShortcutReplacer.lnk')
         exe_path = sys.executable
-        if state == QtCore.Qt.Checked:
-            self.create_autostart_shortcut(startup_path, exe_path)
+        if state == Qt.Checked:
+            try:
+                self.create_autostart_shortcut(startup_path, exe_path)
+                logging.info("Autostart enabled.")
+            except Exception as e:
+                logging.error(f"Failed to enable autostart: {e}")
         else:
-            if os.path.exists(startup_path):
-                os.remove(startup_path)
+            try:
+                if os.path.exists(startup_path):
+                    os.remove(startup_path)
+                    logging.info("Autostart disabled.")
+            except Exception as e:
+                logging.error(f"Failed to disable autostart: {e}")
 
     def create_autostart_shortcut(self, shortcut_path, target_path):
         try:
@@ -147,8 +186,11 @@ class MainWindow(QtWidgets.QMainWindow):
             shortcut.TargetPath = target_path
             shortcut.WorkingDirectory = os.path.dirname(target_path)
             shortcut.Save()
+            logging.info("Autostart shortcut created successfully.")
         except ImportError:
-            print("Error: pywin32 module is required for creating shortcuts")
+            logging.error("Error: pywin32 module is required for creating shortcuts")
+        except Exception as e:
+            logging.error(f"Error creating autostart shortcut: {e}")
 
 
 if __name__ == '__main__':
