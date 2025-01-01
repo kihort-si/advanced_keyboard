@@ -1,8 +1,10 @@
 import sys
 import json
-from PyQt5 import QtWidgets, QtGui
+import os
+from PyQt5 import QtWidgets, QtGui, QtCore
 from pynput import keyboard
 import threading
+import ctypes
 
 
 class ShortcutReplacer:
@@ -66,8 +68,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.replacer = ShortcutReplacer()
 
-        self.setWindowTitle("Shortcut Replacer")
-        self.setGeometry(100, 100, 400, 300)
+        self.setWindowTitle("Advanced Keyboard")
+        self.setWindowIcon(QtGui.QIcon("icon.png"))
+        self.setGeometry(100, 100, 600, 500)
 
         self.layout = QtWidgets.QVBoxLayout()
 
@@ -87,12 +90,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stop_button = QtWidgets.QPushButton("Stop", self)
         self.stop_button.clicked.connect(self.stop_replacer)
 
+        self.autostart_checkbox = QtWidgets.QCheckBox("Enable Autostart", self)
+        self.autostart_checkbox.setChecked(self.check_autostart())
+        self.autostart_checkbox.stateChanged.connect(self.toggle_autostart)
+
         self.layout.addWidget(self.trigger_input)
         self.layout.addWidget(self.replacement_input)
         self.layout.addWidget(self.add_button)
         self.layout.addWidget(self.rules_list)
         self.layout.addWidget(self.start_button)
         self.layout.addWidget(self.stop_button)
+        self.layout.addWidget(self.autostart_checkbox)
 
         central_widget = QtWidgets.QWidget()
         central_widget.setLayout(self.layout)
@@ -117,6 +125,30 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def stop_replacer(self):
         self.replacer.stop()
+
+    def check_autostart(self):
+        startup_path = os.path.join(os.getenv('APPDATA'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'ShortcutReplacer.lnk')
+        return os.path.exists(startup_path)
+
+    def toggle_autostart(self, state):
+        startup_path = os.path.join(os.getenv('APPDATA'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'ShortcutReplacer.lnk')
+        exe_path = sys.executable
+        if state == QtCore.Qt.Checked:
+            self.create_autostart_shortcut(startup_path, exe_path)
+        else:
+            if os.path.exists(startup_path):
+                os.remove(startup_path)
+
+    def create_autostart_shortcut(self, shortcut_path, target_path):
+        try:
+            import win32com.client
+            shell = win32com.client.Dispatch("WScript.Shell")
+            shortcut = shell.CreateShortcut(shortcut_path)
+            shortcut.TargetPath = target_path
+            shortcut.WorkingDirectory = os.path.dirname(target_path)
+            shortcut.Save()
+        except ImportError:
+            print("Error: pywin32 module is required for creating shortcuts")
 
 
 if __name__ == '__main__':
