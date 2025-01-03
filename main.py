@@ -14,6 +14,45 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+PRESET_REPLACEMENTS = {
+    "--": "—",
+    "...": "…",
+    "(c)": "©",
+    "(r)": "®",
+    "(tm)": "™"
+}
+
+
+class PresetSelectionWindow(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Preset Replacements")
+        self.setGeometry(200, 200, 300, 400)
+
+        self.layout = QtWidgets.QVBoxLayout()
+
+        self.preset_list = QtWidgets.QListWidget(self)
+        self.preset_list.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
+
+        for trigger, replacement in PRESET_REPLACEMENTS.items():
+            item = QtWidgets.QListWidgetItem(f"{trigger} -> {replacement}")
+            item.setData(Qt.UserRole, (trigger, replacement))
+            self.preset_list.addItem(item)
+
+        self.import_button = QtWidgets.QPushButton("Import Selected", self)
+        self.import_button.clicked.connect(self.accept)
+
+        self.layout.addWidget(self.preset_list)
+        self.layout.addWidget(self.import_button)
+
+        self.setLayout(self.layout)
+
+    def get_selected_presets(self):
+        selected = []
+        for item in self.preset_list.selectedItems():
+            selected.append(item.data(Qt.UserRole))
+        return selected
+
 
 class ShortcutReplacer:
     def __init__(self):
@@ -55,6 +94,11 @@ class ShortcutReplacer:
         if not isinstance(self.replacements, dict):
             logging.error("Invalid rules format detected. Resetting to default.")
             self.replacements = {}
+
+    def import_presets(self):
+        self.replacements.update(PRESET_REPLACEMENTS)
+        self.save_rules()
+        logging.info("Preset replacements imported.")
 
     def start(self):
         def on_press(key):
@@ -108,6 +152,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.add_button = QtWidgets.QPushButton("Add Rule", self)
         self.add_button.clicked.connect(self.add_rule)
 
+        self.import_button = QtWidgets.QPushButton("Import Presets", self)
+        self.import_button.clicked.connect(self.open_preset_window)
+
         self.rules_list = QtWidgets.QListWidget(self)
         self.load_rules_into_list()
 
@@ -123,6 +170,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.layout.addWidget(self.trigger_input)
         self.layout.addWidget(self.replacement_input)
         self.layout.addWidget(self.add_button)
+        self.layout.addWidget(self.import_button)
         self.layout.addWidget(self.rules_list)
         self.layout.addWidget(self.start_button)
         self.layout.addWidget(self.stop_button)
@@ -141,6 +189,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.trigger_input.clear()
             self.replacement_input.clear()
             logging.info(f"Added rule: {trigger} -> {replacement}")
+
+    def open_preset_window(self):
+        dialog = PresetSelectionWindow(self)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            selected_presets = dialog.get_selected_presets()
+            for trigger, replacement in selected_presets:
+                self.replacer.add_replacement(trigger, replacement)
+            self.load_rules_into_list()
+            logging.info("Selected presets imported into the rules list.")
 
     def load_rules_into_list(self):
         self.rules_list.clear()
